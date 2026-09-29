@@ -1,0 +1,21 @@
+# Groups to scrape (full URLs)
+groups:
+  - https://www.facebook.com/groups/818281132525134
+  - https://www.facebook.com/groups/263561763818649
+
+cookies_file: cookies.json     # never committed (see .gitignore)
+output_dir: output             # scraper.db + screenshots/<group_id>/<post_id>.png
+
+max_posts: 50                  # per group, per run
+stop_after_known: 0            # e.g. 10 = stop once 10 posts in a row are already saved
+sort: chronological            # chronological | recent_activity | top | default
+
+comments: true                 # open each post with comments and scrape all comments + replies
+max_comment_rounds: 40
+screenshots: true
+
+headless: false
+viewport_width: 1366
+viewport_height: 900
+delay_min: 1.0                 # random pause between posts, seconds
+delay_max: 2.5
