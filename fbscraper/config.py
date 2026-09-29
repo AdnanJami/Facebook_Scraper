@@ -1,5 +1,5 @@
 """Settings: defaults, overridden by config.yaml, overridden by CLI flags."""
-from dataclasses import dataclass, field, fields
+from dataclasses import dataclass, fields
 from pathlib import Path
 
 import yaml
@@ -7,7 +7,6 @@ import yaml
 
 @dataclass
 class Config:
-    groups: list[str] = field(default_factory=list)
     cookies_file: str = "cookies.json"
     output_dir: str = "output"
     max_posts: int = 50             # per group

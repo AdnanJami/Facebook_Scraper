@@ -1,7 +1,5 @@
-# Groups to scrape (full URLs)
-groups:
-  - https://www.facebook.com/groups/818281132525134
-  - https://www.facebook.com/groups/263561763818649
+# Group links are given on the command line:
+#   python -m fbscraper scrape https://www.facebook.com/groups/<id>
 
 cookies_file: cookies.json     # never committed (see .gitignore)
 output_dir: output             # scraper.db + screenshots/<group_id>/<post_id>.png

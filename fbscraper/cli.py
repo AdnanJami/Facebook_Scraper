@@ -80,15 +80,18 @@ def scrape_group(cfg: Config, context, store: Storage, group_url: str) -> dict:
     return stats
 
 
-def cmd_scrape(cfg: Config) -> int:
-    if not cfg.groups:
-        log.error("No groups given. Add them to config.yaml or pass --group URL.")
-        return 2
+def cmd_scrape(cfg: Config, groups: list[str]) -> int:
+    for url in groups:  # fail fast on a bad link, before the browser starts
+        try:
+            group_id_from_url(url)
+        except ValueError as e:
+            log.error("%s (expected e.g. https://www.facebook.com/groups/123456789)", e)
+            return 2
     store = Storage(cfg.db_path)
     all_stats = []
     try:
         with open_browser(cfg) as context:
-            for group_url in cfg.groups:
+            for group_url in groups:
                 all_stats.append(scrape_group(cfg, context, store, group_url))
             save_cookies(context, Path(cfg.cookies_file))
     except NotLoggedIn as e:
@@ -121,7 +124,7 @@ def main(argv=None) -> int:
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     sc = sub.add_parser("scrape", help="scrape posts (and comments) from groups")
-    sc.add_argument("--group", action="append", dest="groups", help="group URL (repeatable)")
+    sc.add_argument("groups", nargs="+", metavar="GROUP_URL", help="one or more Facebook group links")
     sc.add_argument("--max-posts", type=int)
     sc.add_argument("--stop-after-known", type=int)
     sc.add_argument("--sort", choices=["chronological", "recent_activity", "top", "default"])
@@ -141,11 +144,11 @@ def main(argv=None) -> int:
         logging.getLogger(noisy).setLevel(logging.WARNING)
 
     overrides = {k: getattr(args, k, None) for k in
-                 ("groups", "max_posts", "stop_after_known", "sort", "comments", "screenshots", "headless")}
+                 ("max_posts", "stop_after_known", "sort", "comments", "screenshots", "headless")}
     cfg = load_config(args.config, overrides)
 
     if args.cmd == "scrape":
-        return cmd_scrape(cfg)
+        return cmd_scrape(cfg, args.groups)
     if args.cmd == "login":
         interactive_login(cfg)
         return 0

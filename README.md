@@ -28,13 +28,13 @@ The file is refreshed after every run. **It is git-ignored: never commit it**, b
 
 ## Usage
 
-Edit `config.yaml` (groups, limits, delays), then:
+Pass one or more group links. Limits and delays are set in `config.yaml`:
 
 ```bash
-python -m fbscraper scrape                          # all groups in config.yaml
-python -m fbscraper scrape --group https://www.facebook.com/groups/<id> --max-posts 20
-python -m fbscraper scrape --stop-after-known 10    # incremental: stop at already-saved posts
-python -m fbscraper scrape --no-comments --no-screenshots --headless
+python -m fbscraper scrape https://www.facebook.com/groups/<id>
+python -m fbscraper scrape <group-url> <another-group-url> --max-posts 20
+python -m fbscraper scrape <group-url> --stop-after-known 10   # incremental: stop at already-saved posts
+python -m fbscraper scrape <group-url> --no-comments --no-screenshots --headless
 python -m fbscraper export --out output/posts.json  # posts with comments/replies nested
 ```
 
