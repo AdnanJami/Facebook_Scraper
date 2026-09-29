@@ -117,6 +117,22 @@ class DuplicateTest(unittest.TestCase):
         c = cand("p2", "2026-12-30T10:00", "long text " * 30)
         self.assertEqual(find_duplicate(c, [self.job])[1], "same_text")
 
+    def test_two_positions_in_one_post_stay_separate(self):
+        exec_job = KnownJob(2, {"title": "Executive - Sales & Marketing"})
+        exec_job.members.append(cand("p9", "2026-09-01T10:00", images=["f" * 64]))
+        c = cand("p9", "2026-09-01T10:00", images=["f" * 64], title="Sr. Executive - Sales & Marketing")
+        self.assertIsNone(find_duplicate(c, [exec_job]))  # same post, same flyer: not a duplicate
+
+    def test_repost_of_two_position_flyer_matches_each_position(self):
+        a = KnownJob(2, {"title": "Executive - Sales & Marketing"})
+        b = KnownJob(3, {"title": "Sr. Executive - Sales & Marketing"})
+        for j in (a, b):
+            j.members.append(cand("p9", "2026-09-01T10:00", images=["f" * 64]))
+        c1 = cand("p10", "2026-09-02T10:00", images=["f" * 64], title="Sr. Executive - Sales & Marketing")
+        c2 = cand("p10", "2026-09-02T10:00", images=["f" * 64], title="Executive - Sales & Marketing")
+        self.assertEqual(find_duplicate(c1, [a, b])[0].job_id, 3)
+        self.assertEqual(find_duplicate(c2, [a, b])[0].job_id, 2)
+
     def test_company_normalization(self):
         self.assertEqual(norm_company("Sokrio Technologies Ltd."), norm_company("SOKRIO Technologies Limited"))
         self.assertEqual(clean("𝐒𝐨𝐤𝐫𝐢𝐨"), "Sokrio")

@@ -52,17 +52,22 @@ output/
 ## Jobs: OCR, filtering and duplicates
 
 ```bash
-python -m fbscraper process            # OCR new images, find job posts, extract fields, merge duplicates
-python -m fbscraper process --rebuild  # re-run the rules on every post (after editing rules; OCR is kept)
+python -m fbscraper process            # OCR new images, judge new posts, merge duplicates
+python -m fbscraper process --rebuild  # redo dedupe for every post, reusing saved judgments (no API calls)
+python -m fbscraper process --rejudge  # ask the judge again for every post (uses API quota)
 python -m fbscraper jobs               # output/jobs.json: one entry per job, with every link + comments
 ```
 
-`process` only handles posts it hasn't seen, so run it after every `scrape`. It is rules only: no AI model and no API.
+`process` only handles posts it hasn't seen, so run it after every `scrape`.
 
 1. **OCR:** each post's downloaded images are read with EasyOCR, English only by default, because adding Bangla makes it misread English text. Bangla is added for posts whose text is mostly Bangla. If an image couldn't be downloaded, the screenshot is OCR'd instead.
-2. **Classify** (`fbscraper/rules.py`) the post text, OCR text and the author's own comments into `job_offer`, `job_seeking`, `course_ad`, `question` or `other`. Every rule that fired is saved in `post_analysis.reasons`, so you can see why a post was classified the way it was.
-3. **Extract** (`fbscraper/extract.py`): title, company, location, salary (min/max/currency), deadline, experience, education, skills, apply email/phone/link, work mode and employment type.
-4. **Dedupe** (`fbscraper/jobs.py`): a job offer is a duplicate of an existing job if, checked in order:
+2. **Judge** (`fbscraper/judge.py`): an LLM on **Groq** (`openai/gpt-oss-120b` by default) reads the post text, the OCR text and the author's own comments. It returns strict JSON:
+   - a category: `job_offer`, `job_seeking`, `course_ad`, `question` or `other`, with a one-line reason;
+   - for job offers, **one entry per position**, with title, company, recruiter, location, salary (min/max/currency/period), deadline, experience, education, skills, how to apply and a summary.
+
+   The API key comes from `GROQ_API_KEY` or `.env` (`GROQ_API_KEY=...`), which is git-ignored. Judgments are saved in `post_analysis.judgment`, so each post is judged only once. The free tier allows about 8k tokens a minute (roughly 2–3 posts a minute) and 1,000 requests a day. When Groq asks it to slow down, the pipeline waits and continues. If the quota runs out, it stops and the next `process` carries on.
+   Set `judge: rules` in `config.yaml` to use the offline keyword/regex rules (`rules.py`, `extract.py`) instead.
+3. **Dedupe** (`fbscraper/jobs.py`): a job offer is a duplicate of an existing job if, checked in order:
 
    | Rule | Meaning |
    |---|---|
@@ -72,14 +77,14 @@ python -m fbscraper jobs               # output/jobs.json: one entry per job, wi
    | `same_contact_title` | same apply email/phone/link + similar title |
    | `similar_text` | 80%+ identical text posted within 30 days |
 
-   Same company + title but a **different deadline** counts as a **new** job (a new hiring round). A duplicate doesn't create a job. It is only linked to the existing one, which gets every Facebook link and every post's comments, plus any details it was missing, such as a deadline stated only in the repost.
+   Same company + title but a **different deadline** counts as a **new** job (a new hiring round). A duplicate doesn't create a job. It is only linked to the existing one, which gets every Facebook link and every post's comments, plus any details it was missing, such as a deadline stated only in the repost. Positions from the same post are never merged with each other, and a repost of a multi-position flyer is matched position by position.
 
 Tables added by `process`:
 
 | Table | Holds |
 |---|---|
 | `post_images` | downloaded image, fingerprint, OCR text/confidence |
-| `post_analysis` | category, score, rules that fired, combined text |
+| `post_analysis` | category, the judge's reason, which judge was used, the full saved judgment |
 | `jobs` | one row per real job, with the extracted fields |
 | `job_posts` | which posts advertise which job, and how the duplicate was detected |
 | `v_jobs` (view) | each job with all its post links, times posted and comment count |
@@ -95,7 +100,9 @@ Tables added by `process`:
 | `fbscraper/storage.py` | SQLite schema, upserts and JSON export |
 | `fbscraper/images.py` | Image download and fingerprints |
 | `fbscraper/ocr.py` | EasyOCR on post images |
-| `fbscraper/rules.py`, `extract.py`, `jobs.py` | Job classification, field extraction, dedupe |
+| `fbscraper/judge.py` | Groq LLM judge: job or not, one entry per position |
+| `fbscraper/rules.py`, `extract.py` | Offline rules judge (`judge: rules`) |
+| `fbscraper/jobs.py` | Runs the judge, dedupe, jobs table |
 | `fbscraper/cli.py` | `scrape` / `process` / `jobs` / `login` / `export` commands |
 
 Details worth knowing:

@@ -54,10 +54,12 @@ CREATE TABLE IF NOT EXISTS post_analysis (
     post_id     TEXT PRIMARY KEY REFERENCES posts(post_id),
     category    TEXT,           -- job_offer | job_seeking | course_ad | question | other
     score       INTEGER,
-    reasons     TEXT,           -- which rules fired (for debugging the rules)
+    reasons     TEXT,           -- why: the judge's reason, or which rules fired
     clean_text  TEXT,           -- post text + OCR + the author's own comments
     text_hash   TEXT,
-    analyzed_at TEXT
+    analyzed_at TEXT,
+    method      TEXT,           -- who judged: "groq:<model>" or "rules"
+    judgment    TEXT            -- full JSON result (cached, reused by `process --rebuild`)
 );
 CREATE TABLE IF NOT EXISTS jobs (
     job_id           INTEGER PRIMARY KEY,
@@ -81,7 +83,10 @@ CREATE TABLE IF NOT EXISTS jobs (
     first_posted_at  TEXT,
     last_posted_at   TEXT,
     created_at       TEXT,
-    updated_at       TEXT
+    updated_at       TEXT,
+    recruiter        TEXT,      -- agency posting on the employer's behalf
+    salary_period    TEXT,      -- month | year | hour | project
+    summary          TEXT       -- one-sentence description
 );
 CREATE TABLE IF NOT EXISTS job_posts (   -- every post advertising the job, incl. duplicates
     job_id        INTEGER REFERENCES jobs(job_id),
@@ -117,6 +122,20 @@ class Storage:
         self.db = sqlite3.connect(path)
         self.db.row_factory = sqlite3.Row
         self.db.executescript(SCHEMA)
+        self._migrate()
+
+    def _migrate(self) -> None:
+        """Add columns introduced after a database was first created."""
+        added = {
+            "post_analysis": {"method": "TEXT", "judgment": "TEXT"},
+            "jobs": {"recruiter": "TEXT", "salary_period": "TEXT", "summary": "TEXT"},
+        }
+        for table, cols in added.items():
+            have = {r[1] for r in self.db.execute(f"PRAGMA table_info({table})")}
+            for col, typ in cols.items():
+                if col not in have:
+                    self.db.execute(f"ALTER TABLE {table} ADD COLUMN {col} {typ}")
+        self.db.commit()
 
     def get_post(self, post_id: str):
         return self.db.execute("SELECT * FROM posts WHERE post_id = ?", (post_id,)).fetchone()

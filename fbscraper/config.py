@@ -16,6 +16,9 @@ class Config:
     max_comment_rounds: int = 40    # "View more comments/replies" click rounds per post
     screenshots: bool = True
     ocr_gpu: bool = False           # needs a CUDA build of PyTorch in this environment
+    judge: str = "groq"             # groq | rules  (who decides job/not-job and extracts fields)
+    groq_model: str = "openai/gpt-oss-120b"
+    groq_reasoning_effort: str = "low"   # low | medium | high (gpt-oss models only)
     headless: bool = False
     viewport_width: int = 1366
     viewport_height: int = 900

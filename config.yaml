@@ -13,6 +13,13 @@ max_comment_rounds: 40
 screenshots: true
 ocr_gpu: false                 # true needs a CUDA build of PyTorch in this environment
 
+# Who judges posts (job or not) and extracts job details:
+#   groq  - LLM on Groq; API key from GROQ_API_KEY or .env (never committed)
+#   rules - offline keyword/regex rules
+judge: groq
+groq_model: openai/gpt-oss-120b
+groq_reasoning_effort: low
+
 headless: false
 viewport_width: 1366
 viewport_height: 900

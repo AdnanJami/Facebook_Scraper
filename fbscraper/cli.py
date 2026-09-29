@@ -9,6 +9,7 @@ from pathlib import Path
 from . import comments as comments_mod
 from . import images
 from . import jobs as jobs_mod
+from . import judge as judge_mod
 from . import ocr
 from . import post as post_mod
 from .config import Config, load_config
@@ -128,13 +129,26 @@ def cmd_export(cfg: Config, out: str) -> int:
     return 0
 
 
-def cmd_process(cfg: Config, rebuild: bool) -> int:
-    """images -> OCR -> classify/extract -> dedupe, for posts not processed yet."""
+def make_judge(cfg: Config):
+    if cfg.judge == "rules":
+        return jobs_mod.RulesJudge()
+    if cfg.judge == "groq":
+        return judge_mod.GroqJudge(judge_mod.load_api_key(), cfg.groq_model, cfg.groq_reasoning_effort)
+    raise ValueError(f"Unknown judge {cfg.judge!r} in config (use groq or rules)")
+
+
+def cmd_process(cfg: Config, rebuild: bool, rejudge: bool) -> int:
+    """images -> OCR -> judge (job or not + details) -> dedupe, for posts not processed yet."""
+    try:
+        judge = make_judge(cfg)
+    except judge_mod.JudgeError as e:
+        log.error("%s", e)
+        return 1
     store = Storage(cfg.db_path)
     try:
         images.download_missing(store.db, cfg.image_dir)
         ocr.run_ocr(store.db, gpu=cfg.ocr_gpu)
-        stats = jobs_mod.analyze(store.db, rebuild=rebuild)
+        stats = jobs_mod.analyze(store.db, judge, rebuild=rebuild, rejudge=rejudge)
         totals = store.db.execute("SELECT COUNT(*), (SELECT COUNT(*) FROM job_posts) FROM jobs").fetchone()
     finally:
         store.close()
@@ -165,9 +179,11 @@ def main(argv=None) -> int:
     sc.add_argument("--no-screenshots", dest="screenshots", action="store_const", const=False)
     sc.add_argument("--headless", action="store_const", const=True)
 
-    pr = sub.add_parser("process", help="OCR images, find job posts, extract fields, merge duplicates")
+    pr = sub.add_parser("process", help="OCR images, judge posts (job or not + details), merge duplicates")
     pr.add_argument("--rebuild", action="store_true",
-                    help="redo classification + dedupe for all posts (after changing rules; OCR is kept)")
+                    help="redo dedupe for all posts, reusing saved judgments (no API calls for judged posts)")
+    pr.add_argument("--rejudge", action="store_true",
+                    help="ask the judge again for every post (uses API quota), then rebuild")
 
     jb = sub.add_parser("jobs", help="export jobs (with all links and comments) to JSON")
     jb.add_argument("--out", default="output/jobs.json")
@@ -190,7 +206,7 @@ def main(argv=None) -> int:
     if args.cmd == "scrape":
         return cmd_scrape(cfg, args.groups)
     if args.cmd == "process":
-        return cmd_process(cfg, args.rebuild)
+        return cmd_process(cfg, args.rebuild, args.rejudge)
     if args.cmd == "jobs":
         return cmd_jobs(cfg, args.out)
     if args.cmd == "login":
