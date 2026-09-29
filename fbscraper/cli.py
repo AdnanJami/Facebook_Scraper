@@ -25,7 +25,10 @@ def scrape_group(cfg: Config, context, store: Storage, group_url: str) -> dict:
 
     open_group(feed_page, group_url, cfg.sort)
     if not is_logged_in(feed_page):
-        raise NotLoggedIn("Facebook shows a login page: cookies expired. Run `python -m fbscraper login`.")
+        raise NotLoggedIn(
+            "Facebook rejected the saved session (logged out or expired). Get fresh cookies: "
+            "export them from a browser where you're logged in into cookies.json, "
+            "or run `python -m fbscraper login` once.")
     post_mod.install_overlay_hiding(feed_page)
     log.info("Scraping group %s (%s)", group_id, feed_page.title())
 

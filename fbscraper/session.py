@@ -34,8 +34,16 @@ def load_cookies(context: BrowserContext, path: Path) -> None:
     log.info("Loaded %d cookies from %s", len(cookies), path)
 
 
+def _has_session(context: BrowserContext) -> bool:
+    # Facebook deletes c_user as soon as it rejects a session, so it's the reliable signal.
+    return any(c["name"] == "c_user" for c in context.cookies("https://www.facebook.com"))
+
+
 def save_cookies(context: BrowserContext, path: Path) -> None:
     """Save in Selenium-compatible form so the legacy scripts can still read the file."""
+    if not _has_session(context):
+        log.warning("Not saving cookies: the browser is logged out (kept the existing %s)", path)
+        return
     out = []
     for c in context.cookies("https://www.facebook.com"):
         d = {k: c[k] for k in ("name", "value", "domain", "path", "secure", "httpOnly")}
@@ -49,6 +57,8 @@ def save_cookies(context: BrowserContext, path: Path) -> None:
 
 def is_logged_in(page: Page) -> bool:
     if "/login" in page.url or "/checkpoint" in page.url:
+        return False
+    if not _has_session(page.context):
         return False
     return page.locator('input[name="email"], input[name="pass"]').count() == 0
 
