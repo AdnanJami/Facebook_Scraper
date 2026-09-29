@@ -15,6 +15,7 @@ class Config:
     comments: bool = True
     max_comment_rounds: int = 40    # "View more comments/replies" click rounds per post
     screenshots: bool = True
+    ocr_gpu: bool = False           # needs a CUDA build of PyTorch in this environment
     headless: bool = False
     viewport_width: int = 1366
     viewport_height: int = 900
@@ -28,6 +29,10 @@ class Config:
     @property
     def screenshot_dir(self) -> Path:
         return Path(self.output_dir) / "screenshots"
+
+    @property
+    def image_dir(self) -> Path:
+        return Path(self.output_dir) / "images"
 
 
 def load_config(path: str | None, overrides: dict) -> Config:

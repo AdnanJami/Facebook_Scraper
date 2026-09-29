@@ -35,6 +35,70 @@ CREATE TABLE IF NOT EXISTS comments (
     scraped_at  TEXT
 );
 CREATE INDEX IF NOT EXISTS comments_post ON comments(post_id);
+
+-- ---- Job pipeline (python -m fbscraper process) ----
+CREATE TABLE IF NOT EXISTS post_images (
+    image_id    INTEGER PRIMARY KEY,
+    post_id     TEXT REFERENCES posts(post_id),
+    idx         INTEGER,        -- order within the post
+    source_url  TEXT,
+    local_path  TEXT,           -- NULL if the download failed
+    dhash       TEXT,           -- image fingerprint, finds the same flyer re-posted
+    ocr_text    TEXT,
+    ocr_conf    REAL,
+    ocr_engine  TEXT,
+    ocr_at      TEXT,
+    UNIQUE (post_id, idx)
+);
+CREATE TABLE IF NOT EXISTS post_analysis (
+    post_id     TEXT PRIMARY KEY REFERENCES posts(post_id),
+    category    TEXT,           -- job_offer | job_seeking | course_ad | question | other
+    score       INTEGER,
+    reasons     TEXT,           -- which rules fired (for debugging the rules)
+    clean_text  TEXT,           -- post text + OCR + the author's own comments
+    text_hash   TEXT,
+    analyzed_at TEXT
+);
+CREATE TABLE IF NOT EXISTS jobs (
+    job_id           INTEGER PRIMARY KEY,
+    title            TEXT,
+    company          TEXT,
+    location         TEXT,
+    work_mode        TEXT,      -- onsite | remote | hybrid
+    employment_type  TEXT,      -- full_time | part_time | internship | contract | freelance
+    salary_min       INTEGER,
+    salary_max       INTEGER,
+    salary_currency  TEXT,
+    salary_text      TEXT,      -- as written, e.g. "BDT 25,000 - 30,000/month", "Negotiable"
+    experience       TEXT,
+    education        TEXT,
+    skills           TEXT,      -- JSON list
+    deadline         TEXT,      -- ISO date
+    apply_email      TEXT,
+    apply_phone      TEXT,
+    apply_url        TEXT,
+    description      TEXT,
+    first_posted_at  TEXT,
+    last_posted_at   TEXT,
+    created_at       TEXT,
+    updated_at       TEXT
+);
+CREATE TABLE IF NOT EXISTS job_posts (   -- every post advertising the job, incl. duplicates
+    job_id        INTEGER REFERENCES jobs(job_id),
+    post_id       TEXT REFERENCES posts(post_id),
+    match_method  TEXT,        -- original | same_image | same_text | same_company_title | same_contact_title | similar_text
+    match_score   REAL,
+    PRIMARY KEY (job_id, post_id)
+);
+CREATE INDEX IF NOT EXISTS job_posts_post ON job_posts(post_id);
+CREATE VIEW IF NOT EXISTS v_jobs AS
+SELECT j.*,
+       (SELECT json_group_array(p.url) FROM job_posts jp JOIN posts p USING (post_id)
+         WHERE jp.job_id = j.job_id) AS post_urls,
+       (SELECT COUNT(*) FROM job_posts jp WHERE jp.job_id = j.job_id) AS times_posted,
+       (SELECT COUNT(*) FROM job_posts jp JOIN comments c USING (post_id)
+         WHERE jp.job_id = j.job_id) AS comment_count
+FROM jobs j;
 """
 
 POST_FIELDS = ("post_id", "group_id", "url", "author", "author_url", "posted_at", "text",
@@ -87,22 +151,45 @@ class Storage:
                         (comment_count, post_id))
         self.db.commit()
 
+    def comment_tree(self, post_id: str) -> list[dict]:
+        """A post's comments with replies nested under their parent comment."""
+        rows = [dict(c) for c in self.db.execute(
+            "SELECT * FROM comments WHERE post_id = ? ORDER BY posted_at", (post_id,))]
+        by_id = {c["comment_id"]: {**c, "replies": []} for c in rows}
+        top = []
+        for c in by_id.values():
+            parent = by_id.get(c["parent_id"]) if c["parent_id"] else None
+            (parent["replies"] if parent else top).append(c)
+        return top
+
     def export(self) -> list[dict]:
-        """All posts with their comments nested (replies under their parent comment)."""
+        """All posts with their comments nested."""
         posts = []
         for p in self.db.execute("SELECT * FROM posts ORDER BY posted_at DESC, first_seen DESC"):
             post = dict(p)
             post["image_urls"] = json.loads(post["image_urls"] or "[]")
-            rows = [dict(c) for c in self.db.execute(
-                "SELECT * FROM comments WHERE post_id = ? ORDER BY posted_at", (p["post_id"],))]
-            by_id = {c["comment_id"]: {**c, "replies": []} for c in rows}
-            top = []
-            for c in by_id.values():
-                parent = by_id.get(c["parent_id"]) if c["parent_id"] else None
-                (parent["replies"] if parent else top).append(c)
-            post["comments"] = top
+            post["comments"] = self.comment_tree(p["post_id"])
             posts.append(post)
         return posts
+
+    def export_jobs(self) -> list[dict]:
+        """One entry per job: extracted fields + every post that advertised it (link,
+        screenshot, how it was matched) with that post's comments."""
+        jobs = []
+        for j in self.db.execute("SELECT * FROM jobs ORDER BY first_posted_at DESC"):
+            job = dict(j)
+            job["skills"] = json.loads(job["skills"] or "[]")
+            job["posts"] = []
+            for p in self.db.execute(
+                "SELECT p.post_id, p.url, p.group_id, p.author, p.author_url, p.posted_at, p.screenshot, "
+                "p.reactions, jp.match_method, jp.match_score FROM job_posts jp JOIN posts p USING (post_id) "
+                "WHERE jp.job_id = ? ORDER BY p.posted_at", (j["job_id"],)
+            ):
+                post = dict(p)
+                post["comments"] = self.comment_tree(p["post_id"])
+                job["posts"].append(post)
+            jobs.append(job)
+        return jobs
 
     def close(self) -> None:
         self.db.close()

@@ -1,4 +1,4 @@
-"""Command line entry point: python -m fbscraper {scrape,login,export}."""
+"""Command line entry point: python -m fbscraper {scrape,process,jobs,login,export}."""
 import argparse
 import json
 import logging
@@ -7,6 +7,9 @@ import sys
 from pathlib import Path
 
 from . import comments as comments_mod
+from . import images
+from . import jobs as jobs_mod
+from . import ocr
 from . import post as post_mod
 from .config import Config, load_config
 from .feed import group_id_from_url, iter_posts, open_group
@@ -51,6 +54,8 @@ def scrape_group(cfg: Config, context, store: Storage, group_url: str) -> dict:
                 shot = cfg.screenshot_dir / group_id / f"{data['post_id']}.png"
                 data["screenshot"] = post_mod.screenshot(el, shot)
         store.upsert_post(data)
+        if not existing and data["image_urls"]:  # image links expire, so fetch them now
+            images.download_post_images(store.db, data["post_id"], data["image_urls"], cfg.image_dir)
         stats["posts"] += 1
         log.info("[%d/%d] %s %s | %s | %d comments",
                  stats["posts"], cfg.max_posts, "new " if not existing else "seen", data["post_id"],
@@ -110,13 +115,38 @@ def cmd_scrape(cfg: Config, groups: list[str]) -> int:
     return 0
 
 
+def _write_json(data: list, out: str, what: str) -> None:
+    Path(out).parent.mkdir(parents=True, exist_ok=True)
+    Path(out).write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(f"Exported {len(data)} {what} to {out}")
+
+
 def cmd_export(cfg: Config, out: str) -> int:
     store = Storage(cfg.db_path)
-    posts = store.export()
+    _write_json(store.export(), out, "posts")
     store.close()
-    Path(out).parent.mkdir(parents=True, exist_ok=True)
-    Path(out).write_text(json.dumps(posts, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(f"Exported {len(posts)} posts to {out}")
+    return 0
+
+
+def cmd_process(cfg: Config, rebuild: bool) -> int:
+    """images -> OCR -> classify/extract -> dedupe, for posts not processed yet."""
+    store = Storage(cfg.db_path)
+    try:
+        images.download_missing(store.db, cfg.image_dir)
+        ocr.run_ocr(store.db, gpu=cfg.ocr_gpu)
+        stats = jobs_mod.analyze(store.db, rebuild=rebuild)
+        totals = store.db.execute("SELECT COUNT(*), (SELECT COUNT(*) FROM job_posts) FROM jobs").fetchone()
+    finally:
+        store.close()
+    print("\nProcessed:", ", ".join(f"{v} {k}" for k, v in sorted(stats.items())) or "nothing new")
+    print(f"Jobs in database: {totals[0]} (from {totals[1]} posts)")
+    return 0
+
+
+def cmd_jobs(cfg: Config, out: str) -> int:
+    store = Storage(cfg.db_path)
+    _write_json(store.export_jobs(), out, "jobs")
+    store.close()
     return 0
 
 
@@ -135,9 +165,16 @@ def main(argv=None) -> int:
     sc.add_argument("--no-screenshots", dest="screenshots", action="store_const", const=False)
     sc.add_argument("--headless", action="store_const", const=True)
 
+    pr = sub.add_parser("process", help="OCR images, find job posts, extract fields, merge duplicates")
+    pr.add_argument("--rebuild", action="store_true",
+                    help="redo classification + dedupe for all posts (after changing rules; OCR is kept)")
+
+    jb = sub.add_parser("jobs", help="export jobs (with all links and comments) to JSON")
+    jb.add_argument("--out", default="output/jobs.json")
+
     sub.add_parser("login", help="log in by hand once and save cookies")
 
-    ex = sub.add_parser("export", help="export the database to JSON")
+    ex = sub.add_parser("export", help="export all raw posts to JSON")
     ex.add_argument("--out", default="output/posts.json")
 
     args = ap.parse_args(argv)
@@ -152,6 +189,10 @@ def main(argv=None) -> int:
 
     if args.cmd == "scrape":
         return cmd_scrape(cfg, args.groups)
+    if args.cmd == "process":
+        return cmd_process(cfg, args.rebuild)
+    if args.cmd == "jobs":
+        return cmd_jobs(cfg, args.out)
     if args.cmd == "login":
         interactive_login(cfg)
         return 0

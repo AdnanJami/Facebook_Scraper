@@ -42,10 +42,47 @@ Output:
 
 ```
 output/
-  scraper.db                          # tables: posts, comments
+  scraper.db                          # all tables (see below)
   screenshots/<group_id>/<post_id>.png
+  images/<post_id>_<n>.jpg            # post images, downloaded at scrape time (Facebook links expire)
   posts.json                          # after `export`
+  jobs.json                           # after `jobs`
 ```
+
+## Jobs: OCR, filtering and duplicates
+
+```bash
+python -m fbscraper process            # OCR new images, find job posts, extract fields, merge duplicates
+python -m fbscraper process --rebuild  # re-run the rules on every post (after editing rules; OCR is kept)
+python -m fbscraper jobs               # output/jobs.json: one entry per job, with every link + comments
+```
+
+`process` only handles posts it hasn't seen, so run it after every `scrape`. It is rules only: no AI model and no API.
+
+1. **OCR:** each post's downloaded images are read with EasyOCR, English only by default, because adding Bangla makes it misread English text. Bangla is added for posts whose text is mostly Bangla. If an image couldn't be downloaded, the screenshot is OCR'd instead.
+2. **Classify** (`fbscraper/rules.py`) the post text, OCR text and the author's own comments into `job_offer`, `job_seeking`, `course_ad`, `question` or `other`. Every rule that fired is saved in `post_analysis.reasons`, so you can see why a post was classified the way it was.
+3. **Extract** (`fbscraper/extract.py`): title, company, location, salary (min/max/currency), deadline, experience, education, skills, apply email/phone/link, work mode and employment type.
+4. **Dedupe** (`fbscraper/jobs.py`): a job offer is a duplicate of an existing job if, checked in order:
+
+   | Rule | Meaning |
+   |---|---|
+   | `same_image` | same flyer image, even if someone else posted it (unless the job titles clearly differ) |
+   | `same_text` | identical post text |
+   | `same_company_title` | same company + similar title + same deadline, or no deadline on one side and posted within 30 days |
+   | `same_contact_title` | same apply email/phone/link + similar title |
+   | `similar_text` | 80%+ identical text posted within 30 days |
+
+   Same company + title but a **different deadline** counts as a **new** job (a new hiring round). A duplicate doesn't create a job. It is only linked to the existing one, which gets every Facebook link and every post's comments, plus any details it was missing, such as a deadline stated only in the repost.
+
+Tables added by `process`:
+
+| Table | Holds |
+|---|---|
+| `post_images` | downloaded image, fingerprint, OCR text/confidence |
+| `post_analysis` | category, score, rules that fired, combined text |
+| `jobs` | one row per real job, with the extracted fields |
+| `job_posts` | which posts advertise which job, and how the duplicate was detected |
+| `v_jobs` (view) | each job with all its post links, times posted and comment count |
 
 ## How it works
 
@@ -55,8 +92,11 @@ output/
 | `fbscraper/feed.py` | Open the group (sorted), walk the virtualized feed, yield each post once |
 | `fbscraper/post.py` | Expand, extract fields, hover the timestamp for the real link/date, take the screenshot |
 | `fbscraper/comments.py` | Open the post page, switch to "All comments", expand everything, parse comments/replies |
-| `fbscraper/storage.py` | SQLite upserts and JSON export |
-| `fbscraper/cli.py` | `scrape` / `login` / `export` commands |
+| `fbscraper/storage.py` | SQLite schema, upserts and JSON export |
+| `fbscraper/images.py` | Image download and fingerprints |
+| `fbscraper/ocr.py` | EasyOCR on post images |
+| `fbscraper/rules.py`, `extract.py`, `jobs.py` | Job classification, field extraction, dedupe |
+| `fbscraper/cli.py` | `scrape` / `process` / `jobs` / `login` / `export` commands |
 
 Details worth knowing:
 - **Screenshots:** Facebook's sticky top bar, group tab bar and pop-ups get painted over a post in element screenshots. They are hidden while capturing, so posts of any height come out as one clean image without scrolling and stitching.

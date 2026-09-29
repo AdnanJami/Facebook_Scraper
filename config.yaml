@@ -11,6 +11,7 @@ sort: chronological            # chronological | recent_activity | top | default
 comments: true                 # open each post with comments and scrape all comments + replies
 max_comment_rounds: 40
 screenshots: true
+ocr_gpu: false                 # true needs a CUDA build of PyTorch in this environment
 
 headless: false
 viewport_width: 1366
