@@ -119,8 +119,9 @@ def _now() -> str:
 class Storage:
     def __init__(self, path: Path):
         path.parent.mkdir(parents=True, exist_ok=True)
-        self.db = sqlite3.connect(path)
+        self.db = sqlite3.connect(path, timeout=30)
         self.db.row_factory = sqlite3.Row
+        self.db.execute("PRAGMA journal_mode=WAL")  # lets the GUI read while a scrape is writing
         self.db.executescript(SCHEMA)
         self._migrate()
 

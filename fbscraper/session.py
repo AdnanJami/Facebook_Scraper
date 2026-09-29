@@ -2,6 +2,7 @@
 import json
 import logging
 from contextlib import contextmanager
+from dataclasses import replace
 from pathlib import Path
 
 from playwright.sync_api import BrowserContext, Page, sync_playwright
@@ -85,6 +86,7 @@ def open_browser(cfg, load=True):
 
 def interactive_login(cfg) -> None:
     """Open a window, let the user log in by hand once, then save the cookies."""
+    cfg = replace(cfg, headless=False)  # the user has to see the window to log in
     with open_browser(cfg, load=False) as context:
         page = context.new_page()
         page.goto("https://www.facebook.com/login")
@@ -94,3 +96,15 @@ def interactive_login(cfg) -> None:
         )
         page.wait_for_timeout(3000)
         save_cookies(context, Path(cfg.cookies_file))
+
+
+def check_login(cfg) -> bool:
+    """Open Facebook with the saved cookies and report whether the session still works."""
+    with open_browser(cfg) as context:
+        page = context.new_page()
+        page.goto("https://www.facebook.com/", wait_until="domcontentloaded", timeout=90_000)
+        page.wait_for_timeout(4000)
+        ok = is_logged_in(page)
+        if ok:
+            save_cookies(context, Path(cfg.cookies_file))
+        return ok

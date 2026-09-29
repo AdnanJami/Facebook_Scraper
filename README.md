@@ -26,7 +26,21 @@ python -m fbscraper login
 
 The file is refreshed after every run. **It is git-ignored: never commit it**, because it gives full access to the account.
 
-## Usage
+## GUI
+
+```bash
+streamlit run app.py        # opens http://localhost:8501
+```
+
+| Tab | What you can do |
+|---|---|
+| 🔎 **Scrape** | group links, posts per group, "stop after N saved posts", comments/screenshots/hidden browser, "process after scraping"; start/stop a run and watch its live log. **Cookies:** status, *Check login*, *Log in with browser*, or upload/paste cookie JSON (it's checked before saving; the old file is kept as `cookies.json.bak`) |
+| 💼 **Jobs** | unique jobs with search and filters (group, type, work mode, deadline not passed, salary, date range); sort by any column; CSV download. Click a job to see all its details and every post that advertised it (screenshot, text, comments) |
+| 📰 **Posts** | every scraped post, including non-jobs, filtered by category/group/date. Click one to see Groq's verdict and reason, the OCR text and the comments, which makes wrong verdicts easy to spot |
+
+Runs started from the GUI go through `python -m fbscraper.runner` in the background, logging to `output/gui_run.log`. They keep going if you close the browser tab.
+
+## Command line
 
 Pass one or more group links. Limits and delays are set in `config.yaml`:
 

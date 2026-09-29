@@ -14,7 +14,7 @@ from . import ocr
 from . import post as post_mod
 from .config import Config, load_config
 from .feed import group_id_from_url, iter_posts, open_group
-from .session import NotLoggedIn, interactive_login, is_logged_in, open_browser, save_cookies
+from .session import NotLoggedIn, check_login, interactive_login, is_logged_in, open_browser, save_cookies
 from .storage import Storage
 
 log = logging.getLogger("fbscraper")
@@ -189,6 +189,8 @@ def main(argv=None) -> int:
     jb.add_argument("--out", default="output/jobs.json")
 
     sub.add_parser("login", help="log in by hand once and save cookies")
+    cl = sub.add_parser("check-login", help="check whether the saved cookies still log in")
+    cl.add_argument("--headless", action="store_const", const=True)
 
     ex = sub.add_parser("export", help="export all raw posts to JSON")
     ex.add_argument("--out", default="output/posts.json")
@@ -212,6 +214,15 @@ def main(argv=None) -> int:
     if args.cmd == "login":
         interactive_login(cfg)
         return 0
+    if args.cmd == "check-login":
+        try:
+            ok = check_login(cfg)
+        except NotLoggedIn as e:
+            log.error("%s", e)
+            return 1
+        print("LOGIN OK: the saved cookies work." if ok else
+              "NOT LOGGED IN: Facebook rejected the cookies. Upload fresh ones or use 'Log in with browser'.")
+        return 0 if ok else 1
     return cmd_export(cfg, args.out)
 
 
