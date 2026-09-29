@@ -1,0 +1,30 @@
+# Secrets / login session — never commit
+cookies.json
+*cookies*.json
+browser_profile/
+.env
+
+# Environments & dependencies
+scrapenv/
+gpuenv/
+venv/
+.venv/
+node_modules/
+__pycache__/
+*.pyc
+
+# Scraped output (contains other people's posts)
+output/
+facebook_screenshots/
+stitched_posts/
+*.png
+posts.json
+facebook_posts_with_cookies.json
+*.db
+*.jsonl
+
+# Unrelated to this project
+farbic.py
+gpuvscpu.py
+*.pt
+Defect_Spectrum_local/
